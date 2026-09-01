@@ -57,7 +57,7 @@ kind: "package-reference"
 
 ### 设计理念
 
-本包是围绕 `serveStatic` 的一个函数插件：`apply` 从 `distIndex` 解析出 dist 根目录，构建一个对原始 `index.html` 运行 `ctx.webServer.renderIndex` 的 `renderIndex` 闭包，并在 effect 作用域下注册回退 handler。按 webserver 的约定，席位只有单一所有者——第二次注册会抛错——且受 effect 作用域约束，因此 dispose fiber 即释放席位。
+本包是围绕 `serveStatic` 的一个函数插件：`apply` 从 `distIndex` 解析出 dist 根目录，构建一个对原始 `index.html` 运行 `ctx.webServer.renderIndex`、并用 `ctx.webServer.baseHref` 前置 `<base href="...">` 锚点的 `renderIndex` 闭包，然后在 effect 作用域下注册回退 handler。该锚点把 dist 的相对资源 URL 解析到挂载前缀（未设置 `basePath` 时为站点根路径），而 webserver 会在进入的目标上剥除同一前缀，因此同一批构建文件可在任意子路径下服务。按 webserver 的约定，席位只有单一所有者——第二次注册会抛错——且受 effect 作用域约束，因此 dispose fiber 即释放席位。
 
 ### 遍历栅栏
 

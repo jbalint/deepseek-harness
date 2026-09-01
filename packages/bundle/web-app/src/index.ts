@@ -147,9 +147,12 @@ function webSurfacePrompt(webUrl: string): string {
 
 /** Resolve the canonical loopback URL from the active Web server. */
 function localWebUrl(ctx: Context): string {
-  const port = ctx.get('webServer')?.port
-  if (port === undefined) throw new Error('web-app: webServer service missing while resolving Web runtime')
-  return `http://${LOOPBACK_HOST}:${String(port)}`
+  const webServer = ctx.get('webServer')
+  const port = webServer?.port
+  if (webServer === undefined || port === undefined) {
+    throw new Error('web-app: webServer service missing while resolving Web runtime')
+  }
+  return `http://${LOOPBACK_HOST}:${String(port)}${webServer.basePath}`
 }
 
 /**

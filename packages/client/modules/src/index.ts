@@ -224,22 +224,27 @@ function chunkUrl(id: string, fileName: string, rev: string, sourceMap = false):
   return `/plugins/${id}/${fileName}${sourceMap ? '.map' : ''}?rev=${rev}`
 }
 
+/** Prefix an internal `/plugins` URL with the configured mount path for emission. */
+function advertisedPath(basePath: string, path: string): string {
+  return basePath === '' ? path : `${basePath}${path}`
+}
+
 /** Measure the longer map-form URL used to partition a startup resource list. */
-function projectedComboUrlBytes(records: readonly WebPluginRecord[]): number {
-  return Buffer.byteLength(comboUrl(
+function projectedComboUrlBytes(records: readonly WebPluginRecord[], basePath: string): number {
+  return Buffer.byteLength(advertisedPath(basePath, comboUrl(
     records.map(record => record.entry.id),
     COMBO_REVISION_PLACEHOLDER,
     true,
-  ))
+  )))
 }
 
 /** Partition one phase in graph order without allowing a generated URL above the protocol limit. */
-function partitionComboRecords(records: readonly WebPluginRecord[]): WebPluginRecord[][] {
+function partitionComboRecords(records: readonly WebPluginRecord[], basePath: string): WebPluginRecord[][] {
   const chunks: WebPluginRecord[][] = []
   let current: WebPluginRecord[] = []
   for (const record of records) {
     const candidate = [...current, record]
-    if (projectedComboUrlBytes(candidate) <= MAX_COMBO_URL_BYTES) {
+    if (projectedComboUrlBytes(candidate, basePath) <= MAX_COMBO_URL_BYTES) {
       current = candidate
       continue
     }
@@ -250,7 +255,7 @@ function partitionComboRecords(records: readonly WebPluginRecord[]): WebPluginRe
     }
     chunks.push(current)
     current = [record]
-    if (projectedComboUrlBytes(current) > MAX_COMBO_URL_BYTES) {
+    if (projectedComboUrlBytes(current, basePath) > MAX_COMBO_URL_BYTES) {
       throw new Error(
         `client-modules: ${record.entry.id} exceeds the ${String(MAX_COMBO_URL_BYTES)}-byte combo URL limit`,
       )
@@ -400,6 +405,7 @@ function buildCombo(
   records: readonly WebPluginRecord[],
   sourceMapOf: (clientPath: string) => Record<string, unknown> | undefined,
   revision?: string,
+  basePath = '',
 ): ComboArtifact {
   const resources = records.map(record => ({
     id: record.entry.id,
@@ -412,12 +418,15 @@ function buildCombo(
   const entries = resources.map(resource => resource.id)
   const url = comboUrl(entries, rev)
   const sourceMapUrl = comboUrl(entries, rev, true)
+  // The map URL stamped on the bytes is the advertised (prefixed) form, which
+  // resolves against the bundle's own URL in the browser; the returned URLs
+  // stay the internal un-prefixed keys the bundle route serves.
   return {
     url,
     rev,
     entries,
     sourceMapUrl,
-    scriptBody: lazyBody(() => buildComboScript(resources, sourceMapUrl)),
+    scriptBody: lazyBody(() => buildComboScript(resources, advertisedPath(basePath, sourceMapUrl))),
     sourceMapBody: lazyBody(() => buildComboSourceMap(resources, sourceMapOf)),
   }
 }
@@ -427,19 +436,20 @@ function buildBatch(
   phase: WebBootBatchPhase,
   records: readonly WebPluginRecord[],
   sourceMapOf: (clientPath: string) => Record<string, unknown> | undefined,
+  basePath = '',
 ): BatchArtifact {
-  const artifact = buildCombo(records, sourceMapOf)
+  const artifact = buildCombo(records, sourceMapOf, undefined, basePath)
   return {
     ...artifact,
-    descriptor: { phase, url: artifact.url, rev: artifact.rev, entries: artifact.entries },
+    descriptor: { phase, url: advertisedPath(basePath, artifact.url), rev: artifact.rev, entries: artifact.entries },
   }
 }
 
 /** Graph row for one bundle rev (url carries the rev as its cache-busting query). */
-function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEntry {
+function graphRow(id: string, rev: string, fields: WebBootRowFields, basePath = ''): WebBootEntry {
   return {
     id,
-    url: comboUrl([id], rev),
+    url: advertisedPath(basePath, comboUrl([id], rev)),
     rev,
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
@@ -618,6 +628,15 @@ export class ClientModuleRegistry extends Service {
   }
 
   /**
+   * Mount prefix for advertised URLs. The Web carrier is an optional service that
+   * may mount after this one, so read it per use instead of at construction.
+   * @returns the configured mount prefix, empty when no Web carrier is mounted.
+   */
+  private get basePath(): string {
+    return this.ctx.get('webServer')?.basePath ?? ''
+  }
+
+  /**
    * Current composed entry graph (stable object between changes).
    * @returns the graph served as `window.__DSH_BOOT__`.
    */
@@ -678,7 +697,7 @@ export class ClientModuleRegistry extends Service {
     const rev = artifactRevision(bundle, baseline)
     record.baseline = baseline
     if (rev === record.entry.rev) return rev
-    record.entry = graphRow(id, rev, record.meta)
+    record.entry = graphRow(id, rev, record.meta, this.basePath)
     record.bundle = bundle
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
@@ -726,16 +745,16 @@ export class ClientModuleRegistry extends Service {
       .map(entry => this.table.get(entry.id))
       .filter((record): record is WebPluginRecord => record !== undefined)
     const artifacts: BatchArtifact[] = []
-    for (const records of partitionComboRecords(bootstrap)) {
-      artifacts.push(buildBatch('bootstrap', records, this.readSourceMap))
+    for (const records of partitionComboRecords(bootstrap, this.basePath)) {
+      artifacts.push(buildBatch('bootstrap', records, this.readSourceMap, this.basePath))
     }
-    for (const records of partitionComboRecords(application)) {
-      artifacts.push(buildBatch('application', records, this.readSourceMap))
+    for (const records of partitionComboRecords(application, this.basePath)) {
+      artifacts.push(buildBatch('application', records, this.readSourceMap, this.basePath))
     }
 
     const batchResponses = new Map<string, LazyResponse>()
     for (const artifact of artifacts) {
-      batchResponses.set(artifact.descriptor.url, this.responses.get(artifact.descriptor.url) ?? {
+      batchResponses.set(artifact.url, this.responses.get(artifact.url) ?? {
         body: artifact.scriptBody,
         contentType: 'text/javascript; charset=utf-8',
       })
@@ -746,7 +765,7 @@ export class ClientModuleRegistry extends Service {
     }
     const responses = new Map(batchResponses)
     for (const record of this.table.values()) {
-      const artifact = buildCombo([record], this.readSourceMap, record.entry.rev)
+      const artifact = buildCombo([record], this.readSourceMap, record.entry.rev, this.basePath)
       responses.set(artifact.url, responses.get(artifact.url) ?? this.responses.get(artifact.url) ?? {
         body: artifact.scriptBody,
         contentType: 'text/javascript; charset=utf-8',
@@ -1001,7 +1020,7 @@ export class ClientModuleRegistry extends Service {
     const snapshot = this.initialBundleSnapshot(packageName, source.meta.clientPath)
     const rev = this.allocateInitialRevision()
     this.table.set(packageName, {
-      entry: graphRow(packageName, rev, source.meta),
+      entry: graphRow(packageName, rev, source.meta, this.basePath),
       loaderName: source.loaderName,
       sourceKey: source.sourceKey,
       meta: source.meta,
@@ -1081,7 +1100,7 @@ export class ClientModuleRegistry extends Service {
         contentType: 'application/json; charset=utf-8',
       }
       : {
-        body: lazyBody(() => buildComboScript([resource()], sourceMapUrl)),
+        body: lazyBody(() => buildComboScript([resource()], advertisedPath(this.basePath, sourceMapUrl))),
         contentType: 'text/javascript; charset=utf-8',
       }
     this.responses.set(resourceUrl, response)

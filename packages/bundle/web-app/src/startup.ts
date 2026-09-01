@@ -27,12 +27,15 @@ export interface WebStartupValues {
   host?: string
   /** `--port`, absent when the invocation did not name one. */
   port?: number
+  /** `--base-path`, the sub-path mount prefix; empty at the site root. */
+  basePath: string
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
 }
 
 /** The web flag family, as commander parsed it. */
 interface WebOptions {
+  basePath?: string
   host?: string
   open: boolean
   port?: string
@@ -51,12 +54,14 @@ function webCommand(): Command {
     .option('--host <host>', 'bind host')
     .option('--no-open', 'do not open the Web UI in the default browser')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
+    .option('--base-path <path>', 'sub-path mount prefix such as /dsh (empty serves at the site root)')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --no-open                serve without opening a browser
   dsh --profile web --port 8080              serve on another port
+  dsh --profile web --base-path /dsh         serve under a reverse-proxy sub-path
 `)
 }
 
@@ -81,6 +86,7 @@ export function apply(ctx: Context): void {
       openBrowser: options.open,
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
+      basePath: options.basePath ?? '',
       trustedHosts: options.trustedHost ?? [],
     } satisfies WebStartupValues)
   })

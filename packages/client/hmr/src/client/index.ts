@@ -26,7 +26,9 @@ export function apply(ctx: Context): void {
   }
 
   ctx.effect(() => {
-    const source = new EventSource(EVENTS_ENDPOINT)
+    // Relative to document.baseURI, so the channel follows the served page's
+    // <base> mount prefix (the site root when unset).
+    const source = new EventSource(EVENTS_ENDPOINT.slice(1))
     source.addEventListener('message', (event: MessageEvent<string>) => {
       let value: unknown
       try {

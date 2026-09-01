@@ -71,6 +71,7 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         },
         tapIndex() { return () => {} },
         port: 0,
+        basePath: '',
       })
       host.provide('credentials', {
         readRecord(key) { return Promise.resolve(credentialRecords.get(key)) },

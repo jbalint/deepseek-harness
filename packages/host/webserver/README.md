@@ -40,6 +40,8 @@ Compose the webserver as the HTTP transport of a browser-facing host, then let t
 
 Set `compression: 'gzip'` to wrap eligible socket-backed responses without changing route APIs. The client must accept gzip and the media type must be compressible; known response lengths below `compressionThresholdBytes` remain uncompressed, while unknown-length streams are eligible immediately. Existing encodings, `Cache-Control: no-transform`, range responses, SSE, ZIP, and the packaged `.gz` Worker image remain unchanged. The shipped Web bundle uses compression level 1 with a 1024-byte threshold; other compositions default to no compression.
 
+Set `basePath` to a mount prefix such as `/dsh` to serve the whole surface under one reverse-proxy sub-path beside other applications. The server strips the prefix from every incoming request target before route matching and before any route owner reads `req.url`, so routes keep their natural `/api` and `/plugins` paths; `ctx.webServer.baseHref` (`` `${basePath}/` ``, so `/` when unset) is the `<base>` value the SPA dist server anchors the page at. An empty value — the default — keeps every route at the site root.
+
 ### Registering routes
 
 `register(route)` adds a named `exact` or `prefix` HTTP route, `registerUpgrade(route)` adds an upgrade route for an exact pathname, and both return a disposer that removes the registration. A duplicate path within either table throws — route patterns are a composition-level contract, so a collision is a misconfiguration. HTTP matching is exact over the whole table, then longest prefix, then the fallback handler; upgrades match exactly and unmatched connections are closed.

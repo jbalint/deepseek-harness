@@ -41,10 +41,19 @@ interface Config {
   compressionLevel?: number
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
+  /**
+   * Sub-path mount prefix such as `/dsh`, stripped from every incoming
+   * request pathname before route matching and before a route owner reads
+   * `req.url`. Empty (the default) keeps every route at the site root;
+   * setting it lets one server coexist with other applications under a
+   * reverse-proxy path prefix. Must be empty or an absolute URL-segment path
+   * without a trailing slash. @default ''
+   */
+  basePath?: string
 }
 ```
 
-`host` accepts only `127.0.0.1` (default posture) and `0.0.0.0` (deliberate network exposure). The carrier itself owns no TLS, authentication, or Origin policy, so a non-loopback bind exposes the server unless the composition supplies those controls. `compression` defaults to `none`; the shipped Web bundle selects gzip level 1 with a 1024-byte threshold. The shipped `dsh web` command selects loopback and rejects `--host 0.0.0.0`; its Connection plugin supplies Host/Origin checks plus browser-session authentication for every Host API route and stream. Other compositions own their bind and route-authentication policy. The dist location is an assembly fact of the frontend plugin that claims the seat.
+`host` accepts only `127.0.0.1` (default posture) and `0.0.0.0` (deliberate network exposure). The carrier itself owns no TLS, authentication, or Origin policy, so a non-loopback bind exposes the server unless the composition supplies those controls. `compression` defaults to `none`; the shipped Web bundle selects gzip level 1 with a 1024-byte threshold. `basePath` defaults to empty: when set to a prefix such as `/dsh`, the server strips it from every incoming request target before route matching and before any route owner reads `req.url`, and the SPA dist server anchors the page at that prefix, so the whole surface mounts under one reverse-proxy sub-path beside other applications. The shipped `dsh web` command selects loopback and rejects `--host 0.0.0.0`; its Connection plugin supplies Host/Origin checks plus browser-session authentication for every Host API route and stream. Other compositions own their bind and route-authentication policy. The dist location is an assembly fact of the frontend plugin that claims the seat.
 
 ## The service
 

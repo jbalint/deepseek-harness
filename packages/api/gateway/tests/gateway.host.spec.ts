@@ -143,7 +143,7 @@ class FakeConnectionService extends Service {
   }
 }
 
-function fakeHttpServer(routes: WebRoute[]): Pick<WebServer, 'register' | 'tapIndex' | 'port'> {
+function fakeHttpServer(routes: WebRoute[]): Pick<WebServer, 'register' | 'tapIndex' | 'port' | 'basePath'> {
   return {
     register(route) {
       if (routes.some(candidate => candidate.kind === route.kind && candidate.path === route.path)) {
@@ -154,6 +154,7 @@ function fakeHttpServer(routes: WebRoute[]): Pick<WebServer, 'register' | 'tapIn
     },
     tapIndex: () => () => {},
     port: 0,
+    basePath: '',
   }
 }
 

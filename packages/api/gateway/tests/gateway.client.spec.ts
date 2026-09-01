@@ -2594,6 +2594,30 @@ describe('Remote stream client carrier lifecycle', () => {
     })
   })
 
+  it('uses the served page base URI for the mux URL under a sub-path mount', async () => {
+    await withFakeWebSocket('https://harness.example', async () => {
+      const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document')
+      Object.defineProperty(globalThis, 'document', { configurable: true, value: { baseURI: 'https://harness.example/dsh/' } })
+      try {
+        FakeWebSocket.autoOpen = false
+        const client = new RemoteStreamMuxClient()
+        client.start()
+        const stream = client.open('feed/follow', {}, new AbortController().signal)[Symbol.asyncIterator]()
+        const pending = stream.next()
+        expect(FakeWebSocket.sockets[0]!.url).toBe('wss://harness.example/dsh/api/remote.mux')
+        FakeWebSocket.sockets[0]!.open()
+        await vi.waitFor(() => { expect(FakeWebSocket.sockets[0]!.sent).toHaveLength(1) })
+        const { streamId } = JSON.parse(FakeWebSocket.sockets[0]!.sent[0]!) as { streamId: string }
+        FakeWebSocket.sockets[0]!.receive({ type: 'end', streamId })
+        await expect(pending).resolves.toEqual({ done: true, value: undefined })
+        await client.close()
+      } finally {
+        if (documentDescriptor === undefined) Reflect.deleteProperty(globalThis, 'document')
+        else Object.defineProperty(globalThis, 'document', documentDescriptor)
+      }
+    })
+  })
+
   it('fails waiters with one socket attempt and lets the owner start the next attempt', async () => {
     await withFakeWebSocket('null', async () => {
       FakeWebSocket.autoOpen = false

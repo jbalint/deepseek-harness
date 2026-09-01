@@ -63,6 +63,7 @@ export const apply = ctx => globalThis.__webStartupApply(ctx)
     "    host: !!js ctx.webStartup.host ?? '127.0.0.1'",
     '    openBrowser: !!js ctx.webStartup.openBrowser',
     '    port: !!js ctx.webStartup.port ?? 3080',
+    "    basePath: !!js ctx.webStartup.basePath ?? ''",
     '    trustedHosts: !!js ctx.webStartup.trustedHosts',
     '- id: provider',
     `  name: ${pathToFileURL(join(dir, 'provider.mjs')).href}`,
@@ -104,19 +105,33 @@ describe('web command-line provider', () => {
       host: '127.0.0.1',
       openBrowser: false,
       port: 8080,
+      basePath: '',
       trustedHosts: ['lab.internal', 'lab-2.internal', '10.0.0.9'],
     })
     expect(observed.readerConfig).toEqual(values)
     expect(observed.exits).toEqual([])
   })
 
-  it('leaves deployment values to each consumer when flags omit them', async () => {
-    const { values, observed } = await bootProvider([])
-    expect(values).toEqual({ openBrowser: true, trustedHosts: [] })
+  it('publishes the sub-path mount prefix from --base-path', async () => {
+    const { values, observed } = await bootProvider(['--base-path', '/dsh'])
+    expect(values).toEqual({ openBrowser: true, basePath: '/dsh', trustedHosts: [] })
     expect(observed.readerConfig).toEqual({
       host: '127.0.0.1',
       openBrowser: true,
       port: 3080,
+      basePath: '/dsh',
+      trustedHosts: [],
+    })
+  })
+
+  it('leaves deployment values to each consumer when flags omit them', async () => {
+    const { values, observed } = await bootProvider([])
+    expect(values).toEqual({ openBrowser: true, basePath: '', trustedHosts: [] })
+    expect(observed.readerConfig).toEqual({
+      host: '127.0.0.1',
+      openBrowser: true,
+      port: 3080,
+      basePath: '',
       trustedHosts: [],
     })
   })

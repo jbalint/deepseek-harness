@@ -41,7 +41,7 @@ export function createWebConnectionRpc(doFetch?: RpcFetch, openStream?: RpcStrea
         payload,
       }
       const response = await send(
-        new URL(`${channel}/${endpoint}`, resolveBase()),
+        new URL(`${channel.slice(1)}/${endpoint}`, resolveBase()),
         {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -107,7 +107,13 @@ function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
 
 function resolveBase(): string {
   const location = (globalThis as { location?: { origin?: string } }).location
-  return location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
+  const origin = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
+  // The served page's <base> element carries the mount prefix; document.baseURI
+  // reflects it and ends with '/', so the relative channel path resolves under
+  // the prefix (and under the origin when unset). Workers have no document and
+  // fall back to the origin.
+  const baseURI = (globalThis as { document?: { baseURI?: string } }).document?.baseURI
+  return baseURI !== undefined && baseURI !== '' ? baseURI : `${origin}/`
 }
 
 function assertTarget(channel: string, endpoint: string): void {

@@ -16,11 +16,13 @@ import {
 
 type Win = {
   location?: { hostname: string; origin?: string }
+  document?: { baseURI?: string }
   __DSH_TRANSPORT__?: ClientTransportHooks
 }
 
 afterEach(() => {
   delete (globalThis as Win).location
+  delete (globalThis as Win).document
   delete (globalThis as Win).__DSH_TRANSPORT__
   vi.unstubAllGlobals()
   vi.useRealTimers()
@@ -527,6 +529,20 @@ describe('connection client apply', () => {
       .toThrow('worker-local streams require the /api channel')
     expect(() => open('/api/path', 'session/follow', {}, abort.signal))
       .toThrow('invalid RPC target')
+  })
+
+  it('resolves the RPC base from the served page base URI under a sub-path mount', async () => {
+    ;(globalThis as Win).location = {
+      hostname: 'harness.example', origin: 'https://harness.example',
+    }
+    ;(globalThis as Win).document = { baseURI: 'https://harness.example/dsh/' }
+    const handle = await mount()
+    globalThis.fetch = vi.fn().mockResolvedValue(new Response('unavailable', { status: 503 }))
+    await expect(handle.rpc.call('/api', 'goals/create', {})).rejects.toThrow('HTTP 503')
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      new URL('https://harness.example/dsh/api/goals/create'),
+      expect.anything(),
+    )
   })
 
   it('validates generic RPC transport failures, correlation, and targets', async () => {

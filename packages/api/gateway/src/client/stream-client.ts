@@ -303,9 +303,17 @@ class StreamInbox {
 
 function remoteStreamUrl(): string {
   const location = (globalThis as { location?: { origin?: string } }).location
+  // A shell-owned Host publishes the HTTP origin of the server that authenticates
+  // it, which a page it serves itself (a static desktop document) cannot derive.
   const transport = (globalThis as { __DSH_TRANSPORT__?: { streamBaseUrl?: string } }).__DSH_TRANSPORT__
-  const base = transport?.streamBaseUrl ?? (location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE)
-  const url = new URL(REMOTE_STREAM_MUX_PATH, base)
+  const origin = location?.origin !== undefined && location.origin !== 'null' ? location.origin : INTERNAL_BASE
+  // The served page's <base> element carries the mount prefix; document.baseURI
+  // reflects it and ends with '/', so the relative mux path resolves under the
+  // prefix (and under the origin when unset). Workers have no document and
+  // fall back to the origin.
+  const baseURI = (globalThis as { document?: { baseURI?: string } }).document?.baseURI
+  const base = transport?.streamBaseUrl ?? (baseURI !== undefined && baseURI !== '' ? baseURI : `${origin}/`)
+  const url = new URL(REMOTE_STREAM_MUX_PATH.slice(1), base)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.href
 }

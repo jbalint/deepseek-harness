@@ -67,11 +67,33 @@ export interface Config {
   compressionLevel?: number
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
+  /**
+   * Sub-path mount prefix such as `/dsh`, stripped from every incoming
+   * request pathname before route matching and before a route owner reads
+   * `req.url`. Empty (the default) keeps every route at the site root;
+   * setting it lets one server coexist with other applications under a
+   * reverse-proxy path prefix. Must be empty or an absolute URL-segment path
+   * without a trailing slash. @default ''
+   */
+  basePath?: string
 }
 
 const DEFAULT_COMPRESSION = 'none' as const
 const DEFAULT_COMPRESSION_LEVEL = 1
 const DEFAULT_COMPRESSION_THRESHOLD_BYTES = 1024
+
+/** Empty, or `/` followed by one or more URL-safe segments (no trailing slash). */
+const BASE_PATH_PATTERN = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/
+
+/** Validate a mount prefix; a malformed entry fails loudly at load, not per request. */
+function assertBasePath(value: string): string {
+  if (value !== '' && !BASE_PATH_PATTERN.test(value)) {
+    throw new Error(
+      `webserver: basePath must be empty or an absolute URL-segment path like "/dsh" (no trailing slash), got ${JSON.stringify(value)}`,
+    )
+  }
+  return value
+}
 
 interface ResolvedConfig extends Config {
   compression: 'none' | 'gzip'
@@ -128,6 +150,7 @@ export class WebServer extends Service {
     compression: z.union([z.const('none'), z.const('gzip')]).default(DEFAULT_COMPRESSION),
     compressionLevel: z.number().step(1).min(0).max(9).default(DEFAULT_COMPRESSION_LEVEL),
     compressionThresholdBytes: z.natural().default(DEFAULT_COMPRESSION_THRESHOLD_BYTES),
+    basePath: z.string().default(''),
   })
 
   private readonly exact = new Map<string, WebRoute>()
@@ -135,6 +158,7 @@ export class WebServer extends Service {
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
+  private readonly mountPrefix: string
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
   private listenedPort!: number
@@ -143,6 +167,7 @@ export class WebServer extends Service {
   constructor(ctx: Context, private config: Config) {
     super(ctx, 'webServer')
     const resolved = config as ResolvedConfig
+    this.mountPrefix = assertBasePath(config.basePath ?? '')
     this.gzip = resolved.compression === 'gzip' ? createGzipMiddleware(resolved) : undefined
   }
 
@@ -154,6 +179,16 @@ export class WebServer extends Service {
   /** The configured bind host (the loopback or all-interfaces literal). */
   get host(): Config['host'] {
     return this.config.host
+  }
+
+  /** The mount prefix (empty at the site root, otherwise `/dsh`-style). */
+  get basePath(): string {
+    return this.mountPrefix
+  }
+
+  /** The `<base href>` value this prefix implies: `${basePath}/`, so `/` when unset. */
+  get baseHref(): string {
+    return `${this.mountPrefix}/`
   }
 
   /**
@@ -221,7 +256,8 @@ export class WebServer extends Service {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
-      const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+      req.url = this.stripBasePath(req.url ?? '/')
+      const rawPath = new URL(req.url, 'http://x').pathname
       const route = this.match(rawPath)
       if (route !== undefined) {
         await route.handler(req, res)
@@ -267,7 +303,8 @@ export class WebServer extends Service {
       let route: WebUpgradeRoute | undefined
       try {
         /* v8 ignore next -- node:http always sets url on server requests. */
-        route = this.upgrades.get(new URL(req.url ?? '/', 'http://x').pathname)
+        req.url = this.stripBasePath(req.url ?? '/')
+        route = this.upgrades.get(new URL(req.url, 'http://x').pathname)
       } catch (error) {
         this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
         socket.destroy()
@@ -324,6 +361,24 @@ export class WebServer extends Service {
       if (best === undefined || prefix.length > best.path.length) best = route
     }
     return best
+  }
+
+  /**
+   * Remove the configured mount prefix from a raw request target, preserving
+   * its query string. A path outside the prefix passes through untouched so
+   * the ordinary no-match/fallback behavior applies.
+   * @param rawUrl - the raw `req.url` value.
+   * @returns the target with the prefix stripped.
+   */
+  private stripBasePath(rawUrl: string): string {
+    const base = this.mountPrefix
+    if (base === '') return rawUrl
+    const queryAt = rawUrl.indexOf('?')
+    const path = queryAt === -1 ? rawUrl : rawUrl.slice(0, queryAt)
+    const query = queryAt === -1 ? '' : rawUrl.slice(queryAt)
+    if (path === base) return `/${query}`
+    if (path.startsWith(`${base}/`)) return `${path.slice(base.length)}${query}`
+    return rawUrl
   }
 
   /**

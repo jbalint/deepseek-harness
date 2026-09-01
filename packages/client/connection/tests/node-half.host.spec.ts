@@ -16,7 +16,7 @@ import { provideBrowserCredentials } from './browser-credentials.ts'
 function fakeHttpServer(
   routes: WebRoute[],
   upgrades: WebUpgradeRoute[],
-): Pick<WebServer, 'register' | 'registerUpgrade' | 'tapIndex' | 'port'> {
+): Pick<WebServer, 'register' | 'registerUpgrade' | 'tapIndex' | 'port' | 'basePath'> {
   return {
     register(route) {
       if (routes.some(candidate => candidate.kind === route.kind && candidate.path === route.path)) {
@@ -31,6 +31,7 @@ function fakeHttpServer(
     },
     tapIndex: () => () => {},
     port: 0,
+    basePath: '',
   }
 }
 

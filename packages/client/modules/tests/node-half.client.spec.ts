@@ -102,6 +102,7 @@ function constructWithRoute(
   options: {
     contextBaseUrl?: string
     entryBaseUrl?: string
+    basePath?: string
     internal?: NonNullable<Context['loader']['internal']>
   } = {},
 ): { context: Context; service: ClientModuleRegistry; route: Promise<WebRoute> } {
@@ -123,13 +124,14 @@ function constructWithRoute(
     },
   })
   const route = Promise.withResolvers<WebRoute>()
-  const webServer: Pick<WebServer, 'port' | 'register' | 'tapIndex'> = {
+  const webServer: Pick<WebServer, 'port' | 'register' | 'tapIndex' | 'basePath'> = {
     port: 0,
     register: (candidate) => {
       if (candidate.path === '/plugins') route.resolve(candidate)
       return () => {}
     },
     tapIndex: () => () => {},
+    basePath: options.basePath ?? '',
   }
   ctx.provide('webServer', webServer as WebServer)
   const service = new ClientModuleRegistry(ctx)
@@ -953,6 +955,22 @@ describe('shared module declarations', () => {
     writeBuiltPackage(packageName, { external: 'react' })
     expect(() => construct([packageName]))
       .toThrow(`client-modules: ${packageName} dsh.client.external must be a string array`)
+  })
+
+  it('prefixes advertised bundle URLs with the basePath while serving the internal paths', async () => {
+    const packageName = '@fixture/base-path'
+    writeBuiltPackage(packageName, {})
+    const { service, route } = constructWithRoute([packageName], { basePath: '/dsh' })
+    const [row] = service.graph().entries
+    expect(row!.url).toMatch(/^\/dsh\/plugins\/\?\?/)
+
+    // The webserver strips the prefix before dispatch, so the route answers
+    // the un-prefixed path while the script's sourceMappingURL advertises the
+    // prefixed form the browser resolves against the bundle URL.
+    const unPrefixed = row!.url.replace(/^\/dsh/, '')
+    const script = await routeRequest(route, unPrefixed)
+    expect(script.status).toBe(200)
+    expect(script.body.toString('utf8')).toContain('sourceMappingURL=/dsh/plugins/')
   })
 })
 

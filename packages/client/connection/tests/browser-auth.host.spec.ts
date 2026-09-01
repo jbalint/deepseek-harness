@@ -55,8 +55,9 @@ function createAuth(
   store: RecordCredentials,
   maxAgeDays = 30,
   processOwner: object = {},
+  basePath = '',
 ): Promise<BrowserAuth> {
-  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays)
+  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays, basePath)
 }
 
 function request(url: string, authority = '127.0.0.1:3080', init?: {
@@ -138,6 +139,26 @@ describe('BrowserAuth', () => {
         'referrer-policy': 'no-referrer',
       },
     })
+  })
+
+  it('scopes the token URL, redirect, and cookie path under a basePath', async () => {
+    const auth = await createAuth(new RecordCredentials(), 30, {}, '/dsh')
+    const launchUrl = auth.authenticatedUrl('http://127.0.0.1:3080')
+    expect(new URL(launchUrl).pathname).toBe('/dsh/')
+
+    // authorizeIndex runs after the webserver strips the prefix, so the target
+    // it reads is the stripped root path still carrying the token.
+    const target = new URL(launchUrl)
+    const res = response()
+    expect(auth.authorizeIndex(request(`/${target.search}`, '127.0.0.1:3080'), res.value)).toBe(false)
+    expect(res.state).toMatchObject({
+      status: 303,
+      headers: { 'location': '/dsh/' },
+    })
+    expect(res.state.headers?.['set-cookie'])
+      .toMatch(/; Max-Age=2592000; Path=\/dsh\/; Expires=.*; HttpOnly; SameSite=Strict$/u)
+    const cookie = res.state.headers!['set-cookie']!.split(';', 1)[0]!
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(true)
   })
 
   it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {

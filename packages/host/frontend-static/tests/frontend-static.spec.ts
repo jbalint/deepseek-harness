@@ -30,7 +30,7 @@ afterEach(async () => {
 })
 
 /** Write a dist fixture and the authenticated Web rows, then boot them through the real Loader. */
-async function loadComposition(): Promise<Context> {
+async function loadComposition(basePath = ''): Promise<Context> {
   root = await mkdtemp(join(tmpdir(), 'dsh-frontend-static-'))
   const dist = join(root, 'dist')
   await mkdir(dist)
@@ -50,6 +50,7 @@ async function loadComposition(): Promise<Context> {
     '  config:',
     "    host: '127.0.0.1'",
     '    port: 0',
+    ...(basePath !== '' ? [`    basePath: ${JSON.stringify(basePath)}`] : []),
     "- name: '@deepseek-ai/dsh-client-connection'",
     '- id: frontend',
     "  name: '@deepseek-ai/dsh-host-frontend-static'",
@@ -93,6 +94,15 @@ async function request(port: number, path: string, init?: RequestInit): Promise<
   }
 }
 
+/** Request init carrying the exchanged browser cookie on every subsequent request. */
+function withCookie(cookie: string): (init?: RequestInit) => RequestInit {
+  return (init?: RequestInit): RequestInit => {
+    const headers = new Headers(init?.headers)
+    headers.set('cookie', cookie)
+    return { ...init, headers }
+  }
+}
+
 describe('real Loader composition', () => {
   it('serves explicit index entries and files while preserving HTTP error semantics', { timeout: 60_000 }, async () => {
     const loaded = await loadComposition()
@@ -109,11 +119,7 @@ describe('real Loader composition', () => {
     const setCookie = exchange.headers.get('set-cookie')
     if (setCookie === null) throw new Error('authenticated frontend did not set a cookie')
     const cookie = setCookie.split(';', 1)[0]!
-    const authenticated = (init?: RequestInit): RequestInit => {
-      const headers = new Headers(init?.headers)
-      headers.set('cookie', cookie)
-      return { ...init, headers }
-    }
+    const authenticated = withCookie(cookie)
 
     expect(await request(port, '/')).toMatchObject({
       status: 401,
@@ -147,6 +153,7 @@ describe('real Loader composition', () => {
       expect(got.type).toBe('text/html; charset=utf-8')
       expect(got.body).toContain('__T__')
       expect(got.body).toContain('shell')
+      expect(got.body).toContain('<base href="/">')
     }
     expect(await request(port, '/', authenticated({ method: 'HEAD' }))).toEqual({
       status: 200,
@@ -202,5 +209,29 @@ describe('real Loader composition', () => {
     await frontendEntry!.fiber?.dispose()
     expect((await request(port, '/no/such/route')).status).toBe(404)
     expect(() => server.registerFallback(() => {})).not.toThrow()
+  })
+
+  it('mounts the dist and index anchor under a basePath prefix', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition('/dsh')
+    const server = loaded.webServer
+    const port = server.port
+    expect(server.baseHref).toBe('/dsh/')
+
+    // The token exchange redirects back under the prefix.
+    const launchUrl = loaded.connection.authenticatedUrl(`http://127.0.0.1:${String(port)}`)
+    const exchange = await fetch(launchUrl, { redirect: 'manual' })
+    expect(exchange.status).toBe(303)
+    expect(exchange.headers.get('location')).toBe('/dsh/')
+    const setCookie = exchange.headers.get('set-cookie')
+    if (setCookie === null) throw new Error('authenticated frontend did not set a cookie')
+    const cookie = setCookie.split(';', 1)[0]!
+    const authenticated = withCookie(cookie)
+
+    // Assets and the index anchor resolve under the prefix.
+    expect(await request(port, '/dsh/app.js')).toMatchObject({ status: 200, type: 'text/javascript; charset=utf-8', body: 'export {}' })
+    const index = await request(port, '/dsh/', authenticated())
+    expect(index.status).toBe(200)
+    expect(index.body).toContain('<base href="/dsh/">')
+    expect(index.body).toContain('shell')
   })
 })
