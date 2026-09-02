@@ -36,6 +36,19 @@ describe('SessionLogDownloadController', () => {
     })
   })
 
+  it('resolves the export endpoint under the served page base URI', async () => {
+    const base = document.head.appendChild(document.createElement('base'))
+    base.href = '/dsh/'
+    const fetcher = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response('zip'))
+    try {
+      await new SessionLogDownloadController(fetcher, vi.fn()).download(SID)
+    } finally {
+      base.remove()
+    }
+
+    expect((fetcher.mock.calls[0]?.[0] as URL).pathname).toBe('/dsh/api/session.export')
+  })
+
   it('collapses concurrent gestures and preserves a dismissed dialog', async () => {
     const response = Promise.withResolvers<Response>()
     const fetcher = vi.fn(() => response.promise)

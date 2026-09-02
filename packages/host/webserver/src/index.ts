@@ -68,12 +68,11 @@ export interface Config {
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
   /**
-   * Sub-path mount prefix such as `/dsh`, stripped from every incoming
-   * request pathname before route matching and before a route owner reads
-   * `req.url`. Empty (the default) keeps every route at the site root;
-   * setting it lets one server coexist with other applications under a
-   * reverse-proxy path prefix. Must be empty or an absolute URL-segment path
-   * without a trailing slash. @default ''
+   * Sub-path mount prefix such as `/dsh`, stripped from matching request
+   * pathnames before route owners read `req.url`. Other paths are rejected,
+   * except that `/` can reach the fallback. Empty (the default) keeps every
+   * route at the site root. Must be empty or an absolute URL-segment path
+   * without a trailing slash or `.` and `..` segments. @default ''
    */
   basePath?: string
 }
@@ -87,9 +86,11 @@ const BASE_PATH_PATTERN = /^\/[A-Za-z0-9._~-]+(?:\/[A-Za-z0-9._~-]+)*$/
 
 /** Validate a mount prefix; a malformed entry fails loudly at load, not per request. */
 function assertBasePath(value: string): string {
-  if (value !== '' && !BASE_PATH_PATTERN.test(value)) {
+  const segments = value.split('/')
+  if (value !== '' && (!BASE_PATH_PATTERN.test(value)
+    || segments.some(segment => segment === '.' || segment === '..'))) {
     throw new Error(
-      `webserver: basePath must be empty or an absolute URL-segment path like "/dsh" (no trailing slash), got ${JSON.stringify(value)}`,
+      `webserver: basePath must be empty or an absolute URL-segment path like "/dsh" (no trailing slash or dot segments), got ${JSON.stringify(value)}`,
     )
   }
   return value
@@ -256,7 +257,19 @@ export class WebServer extends Service {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
-      req.url = this.stripBasePath(req.url ?? '/')
+      const rawUrl = req.url ?? '/'
+      const strippedUrl = this.stripBasePath(rawUrl)
+      if (strippedUrl === undefined) {
+        const fallback = this.fallback
+        if (new URL(rawUrl, 'http://x').pathname !== '/' || fallback === undefined) {
+          res.writeHead(404)
+          res.end()
+          return
+        }
+        await fallback(req, res)
+        return
+      }
+      req.url = strippedUrl
       const rawPath = new URL(req.url, 'http://x').pathname
       const route = this.match(rawPath)
       if (route !== undefined) {
@@ -303,7 +316,12 @@ export class WebServer extends Service {
       let route: WebUpgradeRoute | undefined
       try {
         /* v8 ignore next -- node:http always sets url on server requests. */
-        req.url = this.stripBasePath(req.url ?? '/')
+        const strippedUrl = this.stripBasePath(req.url ?? '/')
+        if (strippedUrl === undefined) {
+          socket.destroy()
+          return
+        }
+        req.url = strippedUrl
         route = this.upgrades.get(new URL(req.url, 'http://x').pathname)
       } catch (error) {
         this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
@@ -365,12 +383,11 @@ export class WebServer extends Service {
 
   /**
    * Remove the configured mount prefix from a raw request target, preserving
-   * its query string. A path outside the prefix passes through untouched so
-   * the ordinary no-match/fallback behavior applies.
+   * its query string.
    * @param rawUrl - the raw `req.url` value.
-   * @returns the target with the prefix stripped.
+   * @returns the stripped target, or `undefined` when it is outside the mount.
    */
-  private stripBasePath(rawUrl: string): string {
+  private stripBasePath(rawUrl: string): string | undefined {
     const base = this.mountPrefix
     if (base === '') return rawUrl
     const queryAt = rawUrl.indexOf('?')
@@ -378,7 +395,7 @@ export class WebServer extends Service {
     const query = queryAt === -1 ? '' : rawUrl.slice(queryAt)
     if (path === base) return `/${query}`
     if (path.startsWith(`${base}/`)) return `${path.slice(base.length)}${query}`
-    return rawUrl
+    return undefined
   }
 
   /**

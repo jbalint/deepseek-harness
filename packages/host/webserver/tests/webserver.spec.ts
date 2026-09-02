@@ -99,6 +99,23 @@ async function upgrade(port: number, path: string): Promise<ReturnType<typeof co
   return socket
 }
 
+/** Open one unclaimed upgrade request and wait for the server to close it. */
+async function rejectedUpgrade(port: number, path: string): Promise<void> {
+  const socket = connect(port, '127.0.0.1')
+  socket.on('error', () => { /* A reset is an accepted rejection. */ })
+  await once(socket, 'connect')
+  const closed = new Promise<void>(resolve => { socket.once('close', () => { resolve() }) })
+  socket.write([
+    `GET ${path} HTTP/1.1`,
+    `Host: 127.0.0.1:${String(port)}`,
+    'Connection: Upgrade',
+    'Upgrade: dsh-test',
+    '',
+    '',
+  ].join('\r\n'))
+  await closed
+}
+
 describe('real Loader composition', () => {
   it('applies gzip only to eligible socket-backed HTTP responses', { timeout: 60_000 }, async () => {
     expect(HttpServer.Config({ host: '127.0.0.1', port: 0 })).toEqual({
@@ -373,12 +390,14 @@ describe('real Loader composition', () => {
       handler: (req, res) => { res.writeHead(200); res.end(new URL(req.url ?? '/', 'http://x').pathname) },
     })
     server.register({ kind: 'prefix', path: '/api', handler: (_req, res) => { res.writeHead(200); res.end('API') } })
+    server.registerFallback((_req, res) => { res.writeHead(200); res.end('ROOT') })
 
     expect(await request(server.port, '/dsh/probe')).toMatchObject({ status: 200, body: 'EXACT' })
     expect(await request(server.port, '/dsh/echo?x=1')).toMatchObject({ status: 200, body: '/echo' })
     expect(await request(server.port, '/dsh/api/anything')).toMatchObject({ status: 200, body: 'API' })
-    // A path sharing the prefix spelling but not the `/dsh/` boundary is not
-    // stripped, and no fallback is registered.
+    expect(await request(server.port, '/')).toMatchObject({ status: 200, body: 'ROOT' })
+    expect((await request(server.port, '/probe')).status).toBe(404)
+    expect((await request(server.port, '/api/anything')).status).toBe(404)
     expect((await request(server.port, '/dshx/probe')).status).toBe(404)
 
     // Upgrade routes strip the prefix too.
@@ -390,14 +409,19 @@ describe('real Loader composition', () => {
     })
     const upgraded = await upgrade(server.port, '/dsh/events?stream=mux')
     upgraded.destroy()
+    await rejectedUpgrade(server.port, '/events?stream=mux')
   })
 
-  it('rejects a malformed basePath loudly at load', { timeout: 60_000 }, async () => {
-    const loaded = await loadComposition(0, false, '/dsh/')
-    const entry = [...loaded.loader.entries()].find(e => e.options.name === '@deepseek-ai/dsh-host-webserver')
-    expect(entry?.fiber?.state).toBe(FiberState.FAILED)
-    await expect(entry?.fiber?.await()).rejects.toThrow(/basePath/)
-  })
+  it.each(['/dsh/', '/.', '/..', '/a/../b'])(
+    'rejects malformed basePath %s loudly at load',
+    { timeout: 60_000 },
+    async (basePath) => {
+      const loaded = await loadComposition(0, false, basePath)
+      const entry = [...loaded.loader.entries()].find(e => e.options.name === '@deepseek-ai/dsh-host-webserver')
+      expect(entry?.fiber?.state).toBe(FiberState.FAILED)
+      await expect(entry?.fiber?.await()).rejects.toThrow(/basePath/)
+    },
+  )
 
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {
     const first = await loadComposition()

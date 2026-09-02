@@ -156,7 +156,7 @@ describe('BrowserAuth', () => {
       headers: { 'location': '/dsh/' },
     })
     expect(res.state.headers?.['set-cookie'])
-      .toMatch(/; Max-Age=2592000; Path=\/dsh\/; Expires=.*; HttpOnly; SameSite=Strict$/u)
+      .toMatch(/; Max-Age=2592000; Path=\/dsh; Expires=.*; HttpOnly; SameSite=Strict$/u)
     const cookie = res.state.headers!['set-cookie']!.split(';', 1)[0]!
     expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(true)
   })

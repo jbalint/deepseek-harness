@@ -40,7 +40,7 @@ kind: "package-reference"
 
 设置 `compression: 'gzip'` 可以包装符合条件的 socket-backed 响应，而不改变 route API。客户端必须接受 gzip，且媒体类型必须可压缩；已知长度小于 `compressionThresholdBytes` 的响应保持未压缩，未知长度的流则立即符合条件。已有编码、`Cache-Control: no-transform`、range 响应、SSE（Server-Sent Events）、ZIP 与已打包的 `.gz` Worker image 均保持不变。随附 Web bundle 使用 level 1 与 1024 字节阈值；其他组合默认不压缩。
 
-设置 `basePath` 为挂载前缀（例如 `/dsh`），可让整个表面在反向代理子路径下、与其它应用并存地服务。服务器会在路由匹配之前、在任何 route owner 读取 `req.url` 之前，从每条进入的请求目标上剥除该前缀，因此路由保留其自然的 `/api` 与 `/plugins` 路径；`ctx.webServer.baseHref`（`` `${basePath}/` ``，未设置时为 `/`）就是 SPA dist 服务器锚定页面所用的 `<base>` 值。空值——即默认——让每条路由保持在站点根路径。
+设置 `basePath` 为挂载前缀（例如 `/dsh`），可让整个表面在反向代理子路径下、与其它应用并存地服务。服务器会在 route owner 读取 `req.url` 之前剥除匹配的前缀，因此路由保留其自然的 `/api` 与 `/plugins` 路径；其它路径会被拒绝，但 `/` 仍可到达 fallback。`ctx.webServer.baseHref`（`` `${basePath}/` ``，未设置时为 `/`）就是 SPA dist 服务器锚定页面所用的 `<base>` 值。空值——即默认——让每条路由保持在站点根路径。
 
 ### 注册路由
 

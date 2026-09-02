@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-web-basepath-subpath-mount.md
-2026-09-01-web-basepath-subpath-mount.md: 0ec63fe2268e4bfd7dc4213d6cbc1b81083aaf90
-2026-09-01-web-basepath-subpath-mount.zh.md: c5a797b1b109f7ee142b2c0dd056087182f3bb9e
+2026-09-01-web-basepath-subpath-mount.md: e314363b748863fe435a0078f2a778cd6e7f9c91
+2026-09-01-web-basepath-subpath-mount.zh.md: 5067c03e62773d503776605e601051dd850cae76

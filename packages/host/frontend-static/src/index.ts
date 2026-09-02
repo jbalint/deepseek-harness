@@ -113,11 +113,8 @@ export async function serveStatic(
 export function apply(ctx: Context, config: Config): void {
   const distIndex = config.distIndex
   const distRoot = dirname(distIndex)
-  // The dist is built with a relative base so the same files mount under any
-  // static directory; served pages also answer deep SPA-fallback paths, where
-  // relative asset URLs would resolve under the request directory, so the
-  // served form anchors them at the configured mount prefix (the site root
-  // when no basePath is set) ahead of every URL-bearing tag.
+  // Anchor the dist's relative asset URLs at the configured mount rather than
+  // at the path that served the index.
   const baseHref = ctx.webServer.baseHref
   const renderIndex = async (): Promise<string> => {
     const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'))

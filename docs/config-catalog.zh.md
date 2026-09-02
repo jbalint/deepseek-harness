@@ -1106,12 +1106,11 @@ export interface Config {
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
   /**
-   * Sub-path mount prefix such as `/dsh`, stripped from every incoming
-   * request pathname before route matching and before a route owner reads
-   * `req.url`. Empty (the default) keeps every route at the site root;
-   * setting it lets one server coexist with other applications under a
-   * reverse-proxy path prefix. Must be empty or an absolute URL-segment path
-   * without a trailing slash. @default ''
+   * Sub-path mount prefix such as `/dsh`, stripped from matching request
+   * pathnames before route owners read `req.url`. Other paths are rejected,
+   * except that `/` can reach the fallback. Empty (the default) keeps every
+   * route at the site root. Must be empty or an absolute URL-segment path
+   * without a trailing slash or `.` and `..` segments. @default ''
    */
   basePath?: string
 }

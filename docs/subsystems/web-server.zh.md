@@ -42,18 +42,17 @@ interface Config {
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
   /**
-   * Sub-path mount prefix such as `/dsh`, stripped from every incoming
-   * request pathname before route matching and before a route owner reads
-   * `req.url`. Empty (the default) keeps every route at the site root;
-   * setting it lets one server coexist with other applications under a
-   * reverse-proxy path prefix. Must be empty or an absolute URL-segment path
-   * without a trailing slash. @default ''
+   * Sub-path mount prefix such as `/dsh`, stripped from matching request
+   * pathnames before route owners read `req.url`. Other paths are rejected,
+   * except that `/` can reach the fallback. Empty (the default) keeps every
+   * route at the site root. Must be empty or an absolute URL-segment path
+   * without a trailing slash or `.` and `..` segments. @default ''
    */
   basePath?: string
 }
 ```
 
-`host` 只接受 `127.0.0.1`（默认姿态）和 `0.0.0.0`（刻意的网络暴露）。载体本身不拥有 TLS、认证或 Origin 策略，因此绑定到非回环地址会暴露服务器，除非组合层提供这些控制。`compression` 默认为 `none`；随附的 Web 组合选择 gzip level 1 和 1024 字节阈值。`basePath` 默认为空：当设置为 `/dsh` 这类前缀时，服务器会在路由匹配之前、在任何 route owner 读取 `req.url` 之前，从每条进入的请求目标上剥除该前缀，SPA dist 服务器也会把页面锚定在该前缀，于是整个表面都挂载在同一个反向代理子路径下、与其它应用并存。随附的 `dsh web` 命令选择 loopback 并拒绝 `--host 0.0.0.0`；其 Connection 插件为每个 Host API route 与 stream 提供 Host/Origin 校验和浏览器会话认证。其他组合自行拥有绑定与路由认证策略。dist 位置是认领席位的前端插件的组装事实。
+`host` 只接受 `127.0.0.1`（默认姿态）和 `0.0.0.0`（刻意的网络暴露）。载体本身不拥有 TLS、认证或 Origin 策略，因此绑定到非回环地址会暴露服务器，除非组合层提供这些控制。`compression` 默认为 `none`；随附的 Web 组合选择 gzip level 1 和 1024 字节阈值。`basePath` 默认为空：当设置为 `/dsh` 这类前缀时，服务器会在 route owner 读取 `req.url` 之前剥除匹配的前缀，拒绝 fallback 根路径 `/` 以外的其它路径，SPA dist 服务器则把页面锚定在该前缀。随附的 `dsh web` 命令选择 loopback 并拒绝 `--host 0.0.0.0`；其 Connection 插件为每个 Host API route 与 stream 提供 Host/Origin 校验和浏览器会话认证。其他组合自行拥有绑定与路由认证策略。dist 位置是认领席位的前端插件的组装事实。
 
 ## 服务
 

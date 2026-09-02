@@ -264,7 +264,7 @@ export class BrowserAuth {
           'location': `${this.basePath}/`,
           'referrer-policy': 'no-referrer',
           'set-cookie': sessionCookie(
-            cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000), `${this.basePath}/`,
+            cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000), this.basePath || '/',
           ),
         })
         res.end()

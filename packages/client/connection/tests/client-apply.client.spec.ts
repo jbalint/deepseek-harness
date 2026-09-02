@@ -537,9 +537,10 @@ describe('connection client apply', () => {
     }
     ;(globalThis as Win).document = { baseURI: 'https://harness.example/dsh/' }
     const handle = await mount()
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response('unavailable', { status: 503 }))
+    const fetch = vi.fn().mockResolvedValue(new Response('unavailable', { status: 503 }))
+    vi.stubGlobal('fetch', fetch)
     await expect(handle.rpc.call('/api', 'goals/create', {})).rejects.toThrow('HTTP 503')
-    expect(globalThis.fetch).toHaveBeenCalledWith(
+    expect(fetch).toHaveBeenCalledWith(
       new URL('https://harness.example/dsh/api/goals/create'),
       expect.anything(),
     )
